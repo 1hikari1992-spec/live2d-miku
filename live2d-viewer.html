@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Live2D Viewer</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body {
+      width: 100%; height: 100%;
+      overflow: hidden;
+      background: transparent;
+    }
+    canvas {
+      display: block;
+      width: 100% !important;
+      height: 100% !important;
+    }
+    #loading {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+      font-family: sans-serif;
+      font-size: 14px;
+      gap: 12px;
+      pointer-events: none;
+    }
+    .spinner {
+      width: 32px; height: 32px;
+      border: 3px solid rgba(255,255,255,0.2);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+
+<div id="loading">
+  <div class="spinner"></div>
+  <span>Loading model…</span>
+</div>
+
+<script src="https://cubism.live2d.com/sdk-web/cubismcore/live2dcubismcore.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/pixi.js@6/dist/browser/pixi.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/pixi-live2d-display/dist/cubism4.min.js"></script>
+
+<script>
+(async () => {
+  // ─── CONFIG ───────────────────────────────────────────────
+  const MODEL_URL = "./models/miku/miku.model3.json";
+  const MOUSE_SENSITIVITY = 0.5;
+  // ──────────────────────────────────────────────────────────
+
+  window.PIXI = PIXI;
+
+  const app = new PIXI.Application({
+    view: document.createElement("canvas"),
+    width: window.innerWidth,
+    height: window.innerHeight,
+    backgroundAlpha: 0,
+    resolution: window.devicePixelRatio || 1,
+    autoDensity: true,
+    antialias: true,
+  });
+  document.body.appendChild(app.view);
+
+  const resize = () => {
+    app.renderer.resize(window.innerWidth, window.innerHeight);
+    if (model) centerModel();
+  };
+  window.addEventListener("resize", resize);
+
+  let model = null;
+
+  const centerModel = () => {
+    if (!model) return;
+    model.x = app.screen.width / 2;
+    model.y = app.screen.height / 2;
+    const scale = (app.screen.height * 0.9) / model.height;
+    model.scale.set(scale);
+  };
+
+  try {
+    model = await PIXI.live2d.Live2DModel.from(MODEL_URL, {
+      autoInteract: false,
+    });
+    app.stage.addChild(model);
+    model.anchor.set(0.5, 0.5);
+    centerModel();
+    document.getElementById("loading").style.display = "none";
+  } catch (e) {
+    document.getElementById("loading").innerHTML =
+      `<span style="color:#ff6b6b">モデルの読み込みに失敗しました<br>${e.message}</span>`;
+    console.error(e);
+    return;
+  }
+
+  // ─── ミク用パラメータ名 ────────────────────────────────────
+  const PARAM_ANGLE_X    = "PARAM_ANGLE_X";
+  const PARAM_ANGLE_Y    = "PARAM_ANGLE_Y";
+  const PARAM_ANGLE_Z    = "PARAM_ANGLE_Z";
+  const PARAM_EYE_BALL_X = "PARAM_EYE_BALL_X";
+  const PARAM_EYE_BALL_Y = "PARAM_EYE_BALL_Y";
+  const PARAM_BODY_X     = "PARAM_BODY_ANGLE_X";
+  // ──────────────────────────────────────────────────────────
+
+  let current = { ax: 0, ay: 0, az: 0, ex: 0, ey: 0, bx: 0 };
+  let target  = { ax: 0, ay: 0, az: 0, ex: 0, ey: 0, bx: 0 };
+  const LERP = 0.08;
+
+  const lerp = (a, b, t) => a + (b - a) * t;
+
+  const onPointerMove = (e) => {
+    const rect = app.view.getBoundingClientRect();
+    const nx = ((e.clientX - rect.left) / rect.width  - 0.5) * 2;
+    const ny = ((e.clientY - rect.top)  / rect.height - 0.5) * 2;
+    const s  = MOUSE_SENSITIVITY;
+
+    target.ax =  nx * 30 * s;
+    target.ay = -ny * 30 * s;
+    target.az = -nx * 10 * s;
+    target.ex =  nx * s;
+    target.ey = -ny * s;
+    target.bx =  nx * 15 * s;
+  };
+
+  const onTouchMove = (e) => onPointerMove(e.touches[0]);
+
+  window.addEventListener("mousemove",  onPointerMove);
+  window.addEventListener("touchmove",  onTouchMove, { passive: true });
+  window.addEventListener("mouseleave", () => {
+    target = { ax: 0, ay: 0, az: 0, ex: 0, ey: 0, bx: 0 };
+  });
+
+  app.ticker.add(() => {
+    if (!model) return;
+
+    for (const k in current) {
+      current[k] = lerp(current[k], target[k], LERP);
+    }
+
+    const core = model.internalModel?.coreModel;
+    if (!core) return;
+
+    const setParam = (id, val) => {
+      try { core.setParameterValueById(id, val); } catch {}
+    };
+
+    setParam(PARAM_ANGLE_X,    current.ax);
+    setParam(PARAM_ANGLE_Y,    current.ay);
+    setParam(PARAM_ANGLE_Z,    current.az);
+    setParam(PARAM_EYE_BALL_X, current.ex);
+    setParam(PARAM_EYE_BALL_Y, current.ey);
+    setParam(PARAM_BODY_X,     current.bx);
+  });
+
+})();
+</script>
+</body>
+</html>
