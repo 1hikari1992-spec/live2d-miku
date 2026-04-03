@@ -34,12 +34,12 @@
 				{
 					"File": "motions/miku_05.motion3.json"
 				}
-			],
+			]/*,
 			"Idle": [
 				{
 					"File": "motions/miku_idle.motion3.json"
 				}
-			]
+			]*/
 		}
 	},
 	"Groups": [
